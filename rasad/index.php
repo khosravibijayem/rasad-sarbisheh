@@ -28,20 +28,33 @@ function catOf(array $x): string {
 }
 $dataFile=$base.'/items.json';$items=is_file($dataFile)?json_decode(file_get_contents($dataFile),true):[];if(!is_array($items))$items=[];
 usort($items,fn($a,$b)=>(int)($b['date']??0)<=>(int)($a['date']??0));
-$today=date('Y-m-d');$todayItems=[];
-foreach($items as $it){$d=$it['date']??$it['received_at']??'';if(is_numeric($d))$day=date('Y-m-d',(int)$d);else{$day=substr((string)$d,0,10);}if($day===$today)$todayItems[]=$it;}
+function newsTimestamp(array $it): int {
+ $d=$it['date']??$it['received_at']??$it['timestamp']??'';
+ if(is_numeric($d)){ $n=(int)$d; return $n>20000000000?(int)floor($n/1000):$n; }
+ $t=strtotime((string)$d); return $t===false?0:$t;
+}
+function persianOrdinal(int $n): string {
+ $words=[1=>'اول',2=>'دوم',3=>'سوم',4=>'چهارم',5=>'پنجم',6=>'ششم',7=>'هفتم',8=>'هشتم',9=>'نهم',10=>'دهم',11=>'یازدهم',12=>'دوازدهم',13=>'سیزدهم',14=>'چهاردهم',15=>'پانزدهم',16=>'شانزدهم',17=>'هفدهم',18=>'هجدهم',19=>'نوزدهم',20=>'بیستم'];
+ return $words[$n]??('شماره '.$n);
+}
+$now=time();$todayNoon=strtotime('today 12:00:00');
+$windowEnd=($now >= $todayNoon)?$todayNoon:strtotime('yesterday 12:00:00');
+$windowStart=$windowEnd-86400;$todayItems=[];
+foreach($items as $it){$ts=newsTimestamp($it);if($ts >= $windowStart && $ts < $windowEnd)$todayItems[]=$it;}
+usort($todayItems,fn($a,$b)=>newsTimestamp($b)<=>newsTimestamp($a));
+$windowLabel=jalaliDate($windowStart).' ساعت ۱۲ تا '.jalaliDate($windowEnd).' ساعت ۱۲';
 $sections=['سیاسی','اقتصادی','فرهنگی و اجتماعی','امنیتی و نظامی','نبض رسانه','شایعات استان'];$groups=[];foreach($sections as $s)$groups[$s]=[];
 foreach($todayItems as $it)$groups[catOf($it)][]=$it;
-$report="#استان_خراسان‌جنوبی\n#شهرستان_سربیشه\n".'گزارش روزانه - '.jalaliDate(time())."\n\n";
+$report="#استان_خراسان‌جنوبی\n#شهرستان_سربیشه\n".'گزارش ۲۴ ساعته - '.$windowLabel."\n\n";
 foreach($sections as $s){$report.=$s."\n";$list=$groups[$s];if(!$list){$report.="🔹مورد خاصی مشاهده نشد\n\n";continue;}
- foreach($list as $i=>$it){if(count($list)>1)$report.='موضوع '.($i+1)." :\n";$txt=trim((string)($it['report_text']??$it['summary']??$it['text']??$it['title']??''));$report.="🔹".$txt."\n";$url=trim((string)($it['url']??''));if($url!=='')$report.=$url."\n";$report.="\n";}
+ foreach($list as $i=>$it){if(count($list)>1)$report.='موضوع '.persianOrdinal($i+1).":\n";$txt=trim((string)($it['report_text']??$it['summary']??$it['text']??$it['title']??''));$report.="🔹".$txt."\n";$url=trim((string)($it['url']??''));if($url!=='')$report.=$url."\n";$report.="\n";}
 }
 ?><!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>رصد سربیشه</title>
 <style>
 body{margin:0;background:#f3f5f8;color:#182230;font:15px Tahoma,Arial}.wrap{max-width:900px;margin:auto;padding:18px}.top,.item,.reportbox{background:white;border-radius:15px;padding:16px;margin:12px 0;box-shadow:0 2px 12px #1720330b}.muted{color:#667085;font-size:13px}button{padding:10px 14px;border:0;border-radius:9px;background:#183b66;color:white;cursor:pointer}a{color:#155eef;text-decoration:none}.tag{display:inline-block;background:#eef4ff;padding:5px 9px;border-radius:20px;margin:3px}textarea{width:100%;min-height:420px;box-sizing:border-box;direction:rtl;text-align:right;font:14px/2 Tahoma;padding:12px;border:1px solid #d0d5dd;border-radius:10px;background:#fafafa}
 </style><div class="wrap">
-<div class="top"><form method="post" style="float:left"><button name="logout">خروج</button></form><h2>دستیار خبری رصد سربیشه</h2><div class="muted">خبرهای ذخیره‌شده: <?=count($items)?> | خبرهای امروز: <?=count($todayItems)?></div><p><span class="tag">سیاسی</span><span class="tag">اقتصادی</span><span class="tag">فرهنگی و اجتماعی</span><span class="tag">امنیتی و نظامی</span></p></div>
-<section class="reportbox"><h3>گزارش روزانه آماده کپی</h3><p class="muted">متن هر خبر از فیلد report_text، سپس summary و در نبود آن text برداشته می‌شود؛ متن خبر در گزارش بازنویسی نمی‌شود.</p><textarea id="dailyReport" readonly><?=htmlspecialchars($report,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')?></textarea><p><button type="button" onclick="copyReport()">کپی گزارش روزانه</button> <span id="copyStatus" class="muted"></span></p></section>
+<div class="top"><form method="post" style="float:left"><button name="logout">خروج</button></form><h2>دستیار خبری رصد سربیشه</h2><div class="muted">خبرهای ذخیره‌شده: <?=count($items)?> | خبرهای بازه ۲۴ ساعته: <?=count($todayItems)?></div><p><span class="tag">سیاسی</span><span class="tag">اقتصادی</span><span class="tag">فرهنگی و اجتماعی</span><span class="tag">امنیتی و نظامی</span></p></div>
+<section class="reportbox"><h3>گزارش روزانه آماده کپی</h3><p class="muted">بازه گزارش: <?=htmlspecialchars($windowLabel,ENT_QUOTES,'UTF-8')?> (از ساعت ۱۲ روز قبل تا ساعت ۱۲ روز گزارش). متن خبرها بازنویسی نمی‌شود.</p><textarea id="dailyReport" readonly><?=htmlspecialchars($report,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')?></textarea><p><button type="button" onclick="copyReport()">کپی گزارش روزانه</button> <span id="copyStatus" class="muted"></span></p></section>
 <h3>آخرین خبرهای دریافتی</h3>
 <?php foreach(array_slice($items,0,100) as $it): ?><article class="item"><b><?=htmlspecialchars((string)($it['title']??'خبر دریافتی'))?></b><p><?=nl2br(htmlspecialchars((string)($it['summary']??$it['text']??'')))?></p><div class="muted"><?=htmlspecialchars((string)($it['source']??''))?> · <?=htmlspecialchars((string)($it['received_at']??''))?> · <?=htmlspecialchars(catOf($it))?></div><?php if(!empty($it['url'])):?><p><a href="<?=htmlspecialchars((string)$it['url'])?>" target="_blank" rel="noopener">مشاهده پیام اصلی</a></p><?php endif;?></article><?php endforeach;?>
 <?php if(!$items):?><div class="item">هنوز خبری دریافت نشده است. اتصال دریافت پیام‌ها هنوز نصب نشده است.</div><?php endif;?>
